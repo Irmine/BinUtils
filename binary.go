@@ -453,3 +453,13 @@ func ReadUnsignedVarLong(buffer *[]byte, offset *int) uint64 {
 
 	return 0
 }
+
+func WriteString(buffer *[]byte, str string) {
+	WriteUnsignedVarInt(buffer, uint32(len(str)))
+	*buffer = append(*buffer, []byte(str)...)
+}
+
+func ReadString(buffer *[]byte, offset *int) string {
+	l := int(ReadUnsignedVarInt(buffer, offset))
+	return string(Read(buffer, offset, l))
+}
