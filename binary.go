@@ -343,85 +343,80 @@ func WriteBigTriad(buffer *[]byte, uint uint32) {
 }
 
 func WriteVarInt(buffer *[]byte, int int32) {
-	int <<= 32 >> 32
 	int = (int << 1) ^ (int >> 31)
 
-	for u := 0; u < 5; u++ {
-		if (int >> 7) != 0 {
-			Write(buffer, byte(int|0x80))
-		} else {
-			Write(buffer, byte(int&0x7f))
-			break
-		}
+	// goto instead of a for loop so that this function is inlined.
+doWrite:
+	if (int >> 7) != 0 {
+		Write(buffer, byte(int|0x80))
 		int >>= 7
+		goto doWrite
+	} else {
+		Write(buffer, byte(int&0x7f))
 	}
 }
 
 func ReadVarInt(buffer *[]byte, offset *int) int32 {
-	var out int32 = 0
-	for v := uint(0); v <= 35; v += 7 {
-		b := int(ReadByte(buffer, offset))
-		out |= int32((b & 0x7f) << v)
-
-		if (b & 0x80) == 0 {
-			break
-		}
-	}
-
-	var out2 = (((out << 32) >> 32) ^ out) >> 1
-	return out2 ^ (out & (1 << 30))
+	var out = int32(ReadUnsignedVarInt(buffer, offset))
+	return ((((out << 31) >> 31) ^ out) >> 1) ^ (out & (1 << 30))
 }
 
 func WriteVarLong(buffer *[]byte, int int64) {
-	int <<= 64 >> 64
 	int = (int << 1) ^ (int >> 63)
 
-	for u := 0; u < 10; u++ {
+	// goto instead of a for loop so that this function is inlined.
+	doWrite:
 		if (int >> 7) != 0 {
 			Write(buffer, byte(int|0x80))
+			int >>= 7
+			goto doWrite
 		} else {
 			Write(buffer, byte(int&0x7f))
-			break
 		}
-		int >>= 7
-	}
 }
 
 func ReadVarLong(buffer *[]byte, offset *int) int64 {
-	var out int64 = 0
-	for v := uint(0); v <= 70; v += 7 {
-		b := int(ReadByte(buffer, offset))
-		out |= int64((b & 0x7f) << v)
+	var out int64
+	var v uint
+	// goto instead of a for loop so that this function is inlined.
+	doRead:
+		b := int64(ReadByte(buffer, offset))
+		out |= (b & 0x7f) << v
 
-		if (b & 0x80) == 0 {
-			break
+		if (b & 0x80) != 0 {
+			v += 7
+			if v <= 70 {
+				goto doRead
+			}
 		}
-	}
 
-	var out2 = (((out << 64) >> 64) ^ out) >> 1
-	return out2 ^ (out & (1 << 62))
+	return ((((out << 63) >> 63) ^ out) >> 1) ^ (out & (1 << 62))
 }
 
 func WriteUnsignedVarInt(buffer *[]byte, int uint32) {
-	for u := 0; u < 5; u++ {
-		if (int >> 7) != 0 {
-			Write(buffer, byte(int|0x80))
-		} else {
-			Write(buffer, byte(int&0x7f))
-			break
-		}
+	// goto instead of a for loop so that this function is inlined.
+doWrite:
+	if (int >> 7) != 0 {
+		Write(buffer, byte(int|0x80))
 		int >>= 7
+		goto doWrite
+	} else {
+		Write(buffer, byte(int&0x7f))
 	}
 }
 
 func ReadUnsignedVarInt(buffer *[]byte, offset *int) uint32 {
-	var out uint32 = 0
-	for v := uint(0); v <= 35; v += 7 {
-		b := int(ReadByte(buffer, offset))
-		out |= uint32((b & 0x7f) << v)
+	var out uint32
+	var v uint
+	// goto instead of a for loop so that this function is inlined.
+doRead:
+	b := uint32(ReadByte(buffer, offset))
+	out |= (b & 0x7f) << v
 
-		if (b & 0x80) == 0 {
-			break
+	if (b & 0x80) != 0 {
+		v += 7
+		if v <= 35 {
+			goto doRead
 		}
 	}
 
@@ -429,29 +424,33 @@ func ReadUnsignedVarInt(buffer *[]byte, offset *int) uint32 {
 }
 
 func WriteUnsignedVarLong(buffer *[]byte, int uint64) {
-	for u := 0; u < 10; u++ {
-		if (int >> 7) != 0 {
-			Write(buffer, byte(int|0x80))
-		} else {
-			Write(buffer, byte(int&0x7f))
-			break
-		}
+	// goto instead of a for loop so that this function is inlined.
+doWrite:
+	if (int >> 7) != 0 {
+		Write(buffer, byte(int|0x80))
 		int >>= 7
+		goto doWrite
+	} else {
+		Write(buffer, byte(int&0x7f))
 	}
 }
 
 func ReadUnsignedVarLong(buffer *[]byte, offset *int) uint64 {
-	var out uint64 = 0
-	for v := uint(0); v <= 70; v += 7 {
-		b := int(ReadByte(buffer, offset))
-		out |= uint64((b & 0x7f) << v)
+	var out uint64
+	var v uint
+	// goto instead of a for loop so that this function is inlined.
+doRead:
+	b := uint64(ReadByte(buffer, offset))
+	out |= (b & 0x7f) << v
 
-		if (b & 0x80) == 0 {
-			return out
+	if (b & 0x80) != 0 {
+		v += 7
+		if v <= 70 {
+			goto doRead
 		}
 	}
 
-	return 0
+	return out
 }
 
 func WriteString(buffer *[]byte, str string) {
