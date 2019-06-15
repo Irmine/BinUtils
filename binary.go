@@ -344,28 +344,7 @@ func WriteBigTriad(buffer *[]byte, uint uint32) {
 	Write(buffer, byte(uint&0xFF))
 }
 
-//more = 1;
-//negative = (value < 0);
-//size = no. of bits in signed integer;
-//while(more) {
-//  byte = low order 7 bits of value;
-//  value >>= 7;
-//  /* the following is only necessary if the implementation of >>= uses a
-//     logical shift rather than an arithmetic shift for a signed left operand */
-//  if (negative)
-//    value |= (~0 << (size - 7)); /* sign extend */
-//
-//  /* sign bit of byte is second high order bit (0x40) */
-//  if ((value == 0 && sign bit of byte is clear) || (value == -1 && sign bit of byte is set))
-//    more = 0;
-//  else
-//    set high order bit of byte;
-//  emit byte;
-//}
-
 func toZigZag32(n int32) uint32 {
-	_ = n >> 31
-	_ = n << 1
 	return (uint32) ((n << 1) ^ (n >> 31));
 }
 
@@ -373,74 +352,28 @@ func fromZigZag32(n uint32) int32 {
 	return (int32) (n >> 1) ^ -(int32) (n & 1);
 }
 
+func toZigZag64(n int64) uint64 {
+	return (uint64) ((n << 1) ^ (n >> 63));
+}
+
+func fromZigZag64(n uint64) int64 {
+	return (int64) (n >> 1) ^ -(int64) (n & 1);
+}
+
 func WriteVarInt(buffer *[]byte, value int32) {
 	WriteUnsignedVarInt(buffer, toZigZag32(value))
-	// more := true
-	// negative := value < 0
-	// //size := 32
-	// for more {
-	// 	chunk := byte(value) & 0x7f
-	// 	value >>= 7
-	// 	if negative {
-	// 		//fmt.Println("here")
-	// 		//value |= ^0 << uint(size - 7)
-	// 	}
-	// 	if ((value == 0) && ((chunk & 0x40) == 0)) || ((value == -1) && ((chunk & 0x40) != 0)) {
-	// 		more = false
-	// 	} else {
-	// 		chunk |= 0x80
-	// 	}
-	// 	Write(buffer, chunk)
-	// }
-
-//	int := value
-//	int = (int << 1) ^ (int >> 31)
-//
-//	// goto instead of a for loop so that this function is inlined.
-//doWrite:
-//	if (int >> 7) != 0 {
-//		Write(buffer, byte(int|0x80))
-//		int >>= 7
-//		goto doWrite
-//	} else {
-//		Write(buffer, byte(int&0x7f))
-//	}
 }
 
 func ReadVarInt(buffer *[]byte, offset *int) int32 {
 	return fromZigZag32(ReadUnsignedVarInt(buffer, offset))
 }
 
-func WriteVarLong(buffer *[]byte, int int64) {
-	int = (int << 1) ^ (int >> 63)
-
-	// goto instead of a for loop so that this function is inlined.
-	doWrite:
-		if (int >> 7) != 0 {
-			Write(buffer, byte(int|0x80))
-			int >>= 7
-			goto doWrite
-		} else {
-			Write(buffer, byte(int&0x7f))
-		}
+func WriteVarLong(buffer *[]byte, value int64) {
+	WriteUnsignedVarLong(buffer, toZigZag64(value))
 }
 
 func ReadVarLong(buffer *[]byte, offset *int) int64 {
-	var out int64
-	var v uint
-	// goto instead of a for loop so that this function is inlined.
-	doRead:
-		b := int64(ReadByte(buffer, offset))
-		out |= (b & 0x7f) << v
-
-		if (b & 0x80) != 0 {
-			v += 7
-			if v <= 70 {
-				goto doRead
-			}
-		}
-
-	return ((((out << 63) >> 63) ^ out) >> 1) ^ (out & (1 << 62))
+	return fromZigZag64(ReadUnsignedVarLong(buffer, offset))
 }
 
 func WriteUnsignedVarInt(buffer *[]byte, value uint32) {
@@ -451,17 +384,6 @@ func WriteUnsignedVarInt(buffer *[]byte, value uint32) {
 	}
 
 	Write(buffer, byte(value))
-
-
-// 	// goto instead of a for loop so that this function is inlined.
-// doWrite:
-// 	if (int >> 7) != 0 {
-// 		Write(buffer, byte(int|0x80))
-// 		int >>= 7
-// 		goto doWrite
-// 	} else {
-// 		Write(buffer, byte(int&0x7f))
-// 	}
 }
 
 func ReadUnsignedVarInt(buffer *[]byte, offset *int) uint32 {
@@ -477,7 +399,7 @@ func ReadUnsignedVarInt(buffer *[]byte, offset *int) uint32 {
 		}
 		result |= uint32(b0 & 0x7f) << (j * 7)
 		j++
-		if j > 5 {
+		if j > 5 { // up to 5 bytes in varint
 			panic("Varint too big")
 		}
 	}
@@ -498,21 +420,24 @@ doWrite:
 }
 
 func ReadUnsignedVarLong(buffer *[]byte, offset *int) uint64 {
-	var out uint64
-	var v uint
-	// goto instead of a for loop so that this function is inlined.
-doRead:
-	b := uint64(ReadByte(buffer, offset))
-	out |= (b & 0x7f) << v
+	result := uint64(0);
+	j := uint64(0);
+	var b0 byte;
 
-	if (b & 0x80) != 0 {
-		v += 7
-		if v <= 70 {
-			goto doRead
+	// do-while https://stackoverflow.com/a/32844744
+	for ok := true; ok; ok = (b0 & 0x80) != 0 {
+		b0 = Read(buffer, offset, 1)[0]
+		if b0 < 0 {
+			panic("not enough bytes for varint")
+		}
+		result |= uint64(b0 & 0x7f) << (j * 7)
+		j++
+		if j > 10 { // up to 10 bytes in varlong
+			panic("Varint too big")
 		}
 	}
 
-	return out
+	return result
 }
 
 func WriteString(buffer *[]byte, str string) {
