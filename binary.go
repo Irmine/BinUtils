@@ -407,16 +407,14 @@ func ReadUnsignedVarInt(buffer *[]byte, offset *int) uint32 {
 	return result
 }
 
-func WriteUnsignedVarLong(buffer *[]byte, int uint64) {
-	// goto instead of a for loop so that this function is inlined.
-doWrite:
-	if (int >> 7) != 0 {
-		Write(buffer, byte(int|0x80))
-		int >>= 7
-		goto doWrite
-	} else {
-		Write(buffer, byte(int&0x7f))
+func WriteUnsignedVarLong(buffer *[]byte, value uint64) {
+	var x int64 = -128
+	for (value & uint64(x)) != 0 {
+		Write(buffer, byte((value&0x7F)|0x80))
+		value >>= 7
 	}
+
+	Write(buffer, byte(value))
 }
 
 func ReadUnsignedVarLong(buffer *[]byte, offset *int) uint64 {
