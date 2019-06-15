@@ -34,7 +34,7 @@ func (stream *Stream) GetBuffer() []byte {
 
 // Feof checks if the stream offset reached the end of its buffer.
 func (stream *Stream) Feof() bool {
-	return stream.Offset >= len(stream.Buffer) - 1
+	return stream.Offset >= len(stream.Buffer)-1
 }
 
 // Get reads the given amount of bytes from the buffer.
