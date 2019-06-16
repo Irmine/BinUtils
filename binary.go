@@ -2,10 +2,12 @@
 // It writes and reads directly to and from byte arrays, rather than readers.
 package binutils
 
-import "math"
+import (
+	"math"
+)
 
 const (
-	BigEndian    EndianType = iota
+	BigEndian EndianType = iota
 	LittleEndian
 )
 
@@ -13,7 +15,7 @@ type EndianType byte
 
 // Read reads from buffer at the given offset with the given length.
 func Read(buffer *[]byte, offset *int, length int) []byte {
-	var b = (*buffer)[*offset:*offset+length]
+	var b = (*buffer)[*offset : *offset+length]
 	*offset += length
 	return b
 }
@@ -40,7 +42,7 @@ func WriteByte(buffer *[]byte, byte byte) {
 	Write(buffer, byte)
 }
 
-func ReadByte(buffer *[]byte, offset *int) (byte) {
+func ReadByte(buffer *[]byte, offset *int) byte {
 	out := Read(buffer, offset, 1)
 	return byte(out[0])
 }
@@ -342,115 +344,98 @@ func WriteBigTriad(buffer *[]byte, uint uint32) {
 	Write(buffer, byte(uint&0xFF))
 }
 
-func WriteVarInt(buffer *[]byte, int int32) {
-	int = (int << 1) ^ (int >> 31)
+func toZigZag32(n int32) uint32 {
+	return (uint32)((n << 1) ^ (n >> 31))
+}
 
-	// goto instead of a for loop so that this function is inlined.
-doWrite:
-	if (int >> 7) != 0 {
-		Write(buffer, byte(int|0x80))
-		int >>= 7
-		goto doWrite
-	} else {
-		Write(buffer, byte(int&0x7f))
-	}
+func fromZigZag32(n uint32) int32 {
+	return (int32)(n>>1) ^ -(int32)(n&1)
+}
+
+func toZigZag64(n int64) uint64 {
+	return (uint64)((n << 1) ^ (n >> 63))
+}
+
+func fromZigZag64(n uint64) int64 {
+	return (int64)(n>>1) ^ -(int64)(n&1)
+}
+
+func WriteVarInt(buffer *[]byte, value int32) {
+	WriteUnsignedVarInt(buffer, toZigZag32(value))
 }
 
 func ReadVarInt(buffer *[]byte, offset *int) int32 {
-	var out = int32(ReadUnsignedVarInt(buffer, offset))
-	return ((((out << 31) >> 31) ^ out) >> 1) ^ (out & (1 << 30))
+	return fromZigZag32(ReadUnsignedVarInt(buffer, offset))
 }
 
-func WriteVarLong(buffer *[]byte, int int64) {
-	int = (int << 1) ^ (int >> 63)
-
-	// goto instead of a for loop so that this function is inlined.
-	doWrite:
-		if (int >> 7) != 0 {
-			Write(buffer, byte(int|0x80))
-			int >>= 7
-			goto doWrite
-		} else {
-			Write(buffer, byte(int&0x7f))
-		}
+func WriteVarLong(buffer *[]byte, value int64) {
+	WriteUnsignedVarLong(buffer, toZigZag64(value))
 }
 
 func ReadVarLong(buffer *[]byte, offset *int) int64 {
-	var out int64
-	var v uint
-	// goto instead of a for loop so that this function is inlined.
-	doRead:
-		b := int64(ReadByte(buffer, offset))
-		out |= (b & 0x7f) << v
-
-		if (b & 0x80) != 0 {
-			v += 7
-			if v <= 70 {
-				goto doRead
-			}
-		}
-
-	return ((((out << 63) >> 63) ^ out) >> 1) ^ (out & (1 << 62))
+	return fromZigZag64(ReadUnsignedVarLong(buffer, offset))
 }
 
-func WriteUnsignedVarInt(buffer *[]byte, int uint32) {
-	// goto instead of a for loop so that this function is inlined.
-doWrite:
-	if (int >> 7) != 0 {
-		Write(buffer, byte(int|0x80))
-		int >>= 7
-		goto doWrite
-	} else {
-		Write(buffer, byte(int&0x7f))
+func WriteUnsignedVarInt(buffer *[]byte, value uint32) {
+	var x int32 = -128
+	for (value & uint32(x)) != 0 {
+		Write(buffer, byte((value&0x7F)|0x80))
+		value >>= 7
 	}
+
+	Write(buffer, byte(value))
 }
 
 func ReadUnsignedVarInt(buffer *[]byte, offset *int) uint32 {
-	var out uint32
-	var v uint
-	// goto instead of a for loop so that this function is inlined.
-doRead:
-	b := uint32(ReadByte(buffer, offset))
-	out |= (b & 0x7f) << v
+	result := uint32(0)
+	j := uint32(0)
+	var b0 byte
 
-	if (b & 0x80) != 0 {
-		v += 7
-		if v <= 35 {
-			goto doRead
+	// do-while https://stackoverflow.com/a/32844744
+	for ok := true; ok; ok = (b0 & 0x80) != 0 {
+		b0 = Read(buffer, offset, 1)[0]
+		if b0 < 0 {
+			panic("not enough bytes for varint")
+		}
+		result |= uint32(b0&0x7f) << (j * 7)
+		j++
+		if j > 5 { // up to 5 bytes in varint
+			panic("Varint too big")
 		}
 	}
 
-	return out
+	return result
 }
 
-func WriteUnsignedVarLong(buffer *[]byte, int uint64) {
-	// goto instead of a for loop so that this function is inlined.
-doWrite:
-	if (int >> 7) != 0 {
-		Write(buffer, byte(int|0x80))
-		int >>= 7
-		goto doWrite
-	} else {
-		Write(buffer, byte(int&0x7f))
+func WriteUnsignedVarLong(buffer *[]byte, value uint64) {
+	var x int64 = -128
+	for (value & uint64(x)) != 0 {
+		Write(buffer, byte((value&0x7F)|0x80))
+		value >>= 7
 	}
+
+	Write(buffer, byte(value))
 }
 
 func ReadUnsignedVarLong(buffer *[]byte, offset *int) uint64 {
-	var out uint64
-	var v uint
-	// goto instead of a for loop so that this function is inlined.
-doRead:
-	b := uint64(ReadByte(buffer, offset))
-	out |= (b & 0x7f) << v
+	result := uint64(0)
+	j := uint64(0)
+	var b0 byte
 
-	if (b & 0x80) != 0 {
-		v += 7
-		if v <= 70 {
-			goto doRead
+	// do-while https://stackoverflow.com/a/32844744
+	for ok := true; ok; ok = (b0 & 0x80) != 0 {
+		b0 = Read(buffer, offset, 1)[0]
+		if b0 < 0 {
+			panic("not enough bytes for varint")
+		}
+		result |= uint64(b0&0x7f) << (j * 7)
+		j++
+		if j > 10 { // up to 10 bytes in varlong
+			panic("Varint too big")
 		}
 	}
 
-	return out
+	return result
 }
 
 func WriteString(buffer *[]byte, str string) {
